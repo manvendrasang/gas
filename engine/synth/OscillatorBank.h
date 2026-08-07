@@ -40,6 +40,14 @@ public:
 
 private:
 
+    // Stable gain staging: returns a normalization factor so that
+    // stacking the secondary / sub / noise oscillators on top of
+    // the primary can never make a voice louder than a primary-only
+    // voice at the same gain. When the combined gain of the active
+    // oscillators is at or below unity, the factor is 1.0 and every
+    // existing single-oscillator patch is completely unaffected.
+    float gainStagingNormalization() const;
+
     double sampleRate = 44100.0;
 
     std::unique_ptr<Oscillator> primary;

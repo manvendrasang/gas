@@ -31,6 +31,15 @@ float MidiUtils::noteToFrequency(
             (midiNote - A4Note) / 12.0f);
 }
 
+float MidiUtils::centsToRatio(
+    float cents)
+{
+    return
+        std::pow(
+            2.0f,
+            cents / 1200.0f);
+}
+
 int MidiUtils::octave(
     int midiNote)
 {

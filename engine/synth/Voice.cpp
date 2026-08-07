@@ -7,6 +7,37 @@
 #include "oscillators/NoiseOscillator.h"
 #include "MidiUtils.h"
 
+std::unique_ptr<Oscillator>
+Voice::createOscillator(
+    WaveType type)
+{
+    switch (type)
+    {
+        case WaveType::Sine:
+            return
+                std::make_unique<SineOscillator>();
+
+        case WaveType::Square:
+            return
+                std::make_unique<SquareOscillator>();
+
+        case WaveType::Saw:
+            return
+                std::make_unique<SawOscillator>();
+
+        case WaveType::Triangle:
+            return
+                std::make_unique<TriangleOscillator>();
+
+        case WaveType::Noise:
+            return
+                std::make_unique<NoiseOscillator>();
+    }
+
+    return
+        std::make_unique<SineOscillator>();
+}
+
 void Voice::prepare(
     double sr)
 {
@@ -34,32 +65,54 @@ void Voice::setInstrument(
     state.currentFrequency =
     info.frequency;
 
-    switch (inst.waveType)
+    oscillators.setPrimary(
+        createOscillator(
+            inst.waveType));
+
+    oscillators.setPrimaryGain(
+        1.0f);
+
+    // Secondary oscillator: only instantiated when it will
+    // actually be heard. Always explicitly cleared otherwise,
+    // since the OscillatorBank is reused across notes and a
+    // stale oscillator/gain from a previous instrument must
+    // never bleed into this one.
+    if (inst.secondaryVolume > 0.0f)
     {
-        case WaveType::Sine:
-            oscillators.setPrimary(
-                std::make_unique<SineOscillator>());
-            break;
+        oscillators.setSecondary(
+            createOscillator(
+                inst.secondaryWaveType));
 
-        case WaveType::Square:
-            oscillators.setPrimary(
-                std::make_unique<SquareOscillator>());
-            break;
+        oscillators.setSecondaryGain(
+            inst.secondaryVolume);
+    }
+    else
+    {
+        oscillators.setSecondary(
+            nullptr);
 
-        case WaveType::Saw:
-            oscillators.setPrimary(
-                std::make_unique<SawOscillator>());
-            break;
+        oscillators.setSecondaryGain(
+            0.0f);
+    }
 
-        case WaveType::Triangle:
-            oscillators.setPrimary(
-                std::make_unique<TriangleOscillator>());
-            break;
+    // Sub oscillator: reuses the primary wave shape, pitched
+    // to track subOctaveOffset relative to the current note.
+    if (inst.subEnabled)
+    {
+        oscillators.setSub(
+            createOscillator(
+                inst.waveType));
 
-        case WaveType::Noise:
-            oscillators.setPrimary(
-                std::make_unique<NoiseOscillator>());
-            break;
+        oscillators.setSubGain(
+            inst.subVolume);
+    }
+    else
+    {
+        oscillators.setSub(
+            nullptr);
+
+        oscillators.setSubGain(
+            0.0f);
     }
 
     oscillators.setPrimaryFrequency(
@@ -86,8 +139,29 @@ float Voice::process()
 
     incrementAge();
 
+    const float primaryFrequency =
+        state.currentFrequency;
+
     oscillators.setPrimaryFrequency(
-        state.currentFrequency);
+        primaryFrequency);
+
+    // Secondary tracks the current pitch, detuned by a fixed
+    // number of cents - this is what makes it a genuine detune
+    // rather than an independent fixed-frequency oscillator.
+    oscillators.setSecondaryFrequency(
+        primaryFrequency *
+        MidiUtils::centsToRatio(
+            instrument.secondaryDetune));
+
+    // Sub tracks the current pitch, offset by whole octaves.
+    // Expressing the octave offset as cents (1200 cents per
+    // octave) lets it reuse the same ratio helper.
+    oscillators.setSubFrequency(
+        primaryFrequency *
+        MidiUtils::centsToRatio(
+            static_cast<float>(
+                instrument.subOctaveOffset) *
+            1200.0f));
 
     oscillators.setDutyCycle(
         instrument.squareDuty);
