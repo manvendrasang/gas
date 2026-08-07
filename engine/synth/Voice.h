@@ -1,6 +1,9 @@
 #pragma once
 
+#include <memory>
+
 #include "Instrument.h"
+#include "Oscillator.h"
 #include "OscillatorBank.h"
 #include "VoiceState.h"
 #include "VoiceProcessor.h"
@@ -58,6 +61,13 @@ public:
     float process();
 
 private:
+
+    // Shared factory for the primary / secondary / sub
+    // oscillators, all of which are built from the same
+    // WaveType enum.
+    static std::unique_ptr<Oscillator>
+    createOscillator(
+        WaveType type);
 
     OscillatorBank
         oscillators;

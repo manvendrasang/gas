@@ -1,5 +1,7 @@
 #include "OscillatorBank.h"
 
+#include <algorithm>
+
 void OscillatorBank::prepare(double sr)
 {
     sampleRate = sr;
@@ -123,21 +125,50 @@ void OscillatorBank::reset()
         sub->reset();
 }
 
+float OscillatorBank::gainStagingNormalization() const
+{
+    float totalGain =
+        primaryGain;
+
+    if (secondary)
+        totalGain += secondaryGain;
+
+    if (noise)
+        totalGain += noiseGain;
+
+    if (sub)
+        totalGain += subGain;
+
+    // Only ever scale down. A patch that was already at or
+    // under unity gain (the common case today: primary only,
+    // gain 1.0) is left completely untouched.
+    totalGain =
+        std::max(
+            totalGain,
+            1.0f);
+
+    return
+        1.0f / totalGain;
+}
+
 float OscillatorBank::process()
 {
+    const float normalization =
+        gainStagingNormalization();
+
     float sample = 0.0f;
 
     if (primary)
-        sample += primary->process() * primaryGain;
+        sample += primary->process() * primaryGain * normalization;
 
     if (secondary)
-        sample += secondary->process() * secondaryGain;
+        sample += secondary->process() * secondaryGain * normalization;
 
     if (noise)
-        sample += noise->process() * noiseGain;
+        sample += noise->process() * noiseGain * normalization;
 
     if (sub)
-        sample += sub->process() * subGain;
+        sample += sub->process() * subGain * normalization;
 
     return sample;
 }

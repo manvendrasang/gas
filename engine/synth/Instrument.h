@@ -50,28 +50,40 @@ struct Instrument
 
     float highpassCutoff = 0.0f;
 
-    // Secondary oscillator
+    // Secondary oscillator (Stage 11 - Detune / Supersaw Foundation)
 
     WaveType secondaryWaveType =
         WaveType::Sine;
 
-    float secondaryFrequency =
-        440.0f;
+    // Detune of the secondary oscillator relative to the
+    // primary, in cents (100 cents = 1 semitone). The
+    // secondary always tracks the voice's current pitch,
+    // it is never a fixed absolute frequency.
+    float secondaryDetune =
+        12.0f;
 
     float secondaryVolume =
         0.0f;
 
 
-    // Sub oscillator
+    // Sub oscillator (Stage 11 - octave tracking)
 
     bool subEnabled =
         false;
+
+    // Octaves relative to the primary oscillator's current
+    // pitch. Negative values sit below the primary (-1 = one
+    // octave down). The sub always tracks pitch changes made
+    // to the voice, it never drifts to a fixed frequency.
+    int subOctaveOffset =
+        -1;
 
     float subVolume =
         0.30f;
 
 
-    // Unison
+    // Unison (foundation - full multi-voice unison lands in
+    // a later stage)
 
     int unisonVoices =
         1;
@@ -80,7 +92,8 @@ struct Instrument
         0.0f;
 
 
-    // Stereo
+    // Stereo (foundation - stereo spread lands in a later
+    // stage)
 
     float stereoWidth =
         0.0f;
