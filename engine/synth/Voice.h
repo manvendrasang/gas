@@ -8,6 +8,7 @@
 #include "VoiceState.h"
 #include "VoiceProcessor.h"
 #include "VoiceInfo.h"
+#include "StereoSample.h"
 
 class Voice
 {
@@ -58,7 +59,7 @@ public:
 
     void reset();
 
-    float process();
+    StereoSample process();
 
 private:
 
