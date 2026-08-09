@@ -70,3 +70,6 @@ Testing/
 *.patch
 build/
 __preview.wav
+*.patch
+build/
+__preview.wav
