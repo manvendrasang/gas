@@ -1,5 +1,7 @@
 #include "Voice.h"
 
+#include <algorithm>
+
 #include "oscillators/SineOscillator.h"
 #include "oscillators/SquareOscillator.h"
 #include "oscillators/SawOscillator.h"
@@ -54,6 +56,10 @@ void Voice::reset()
     state = VoiceState{};
 
     info = VoiceInfo{};
+
+    unisonIndex = 0;
+
+    unisonCount = 1;
 }
 
 void Voice::setInstrument(
@@ -132,6 +138,15 @@ void Voice::setInstrument(
         inst.bitCrush);
 }
 
+void Voice::setUnisonSlot(
+    int index,
+    int count)
+{
+    unisonIndex = index;
+
+    unisonCount = count;
+}
+
 StereoSample Voice::process()
 {
     state.time +=
@@ -140,8 +155,31 @@ StereoSample Voice::process()
 
     incrementAge();
 
+    // Stage 13 - 8-Voice Unison. When this voice is part of a
+    // unison stack (unisonCount > 1), it sits at an evenly
+    // spread position across the stack: voice 0 and voice
+    // (count-1) sit at the extremes (-1 and +1), the rest fill
+    // in evenly between them. That single spread value drives
+    // both this voice's detune (below) and its stereo position
+    // (further down). unisonCount defaults to 1, which collapses
+    // spread to 0 and matches Stage 11/12 behavior exactly.
+    float unisonSpread =
+        0.0f;
+
+    if (unisonCount > 1)
+    {
+        unisonSpread =
+            (2.0f *
+             static_cast<float>(unisonIndex)) /
+            static_cast<float>(unisonCount - 1)
+            - 1.0f;
+    }
+
     const float primaryFrequency =
-        state.currentFrequency;
+        state.currentFrequency *
+        MidiUtils::centsToRatio(
+            unisonSpread *
+            instrument.unisonDetune);
 
     oscillators.setPrimaryFrequency(
         primaryFrequency);
@@ -181,20 +219,41 @@ StereoSample Voice::process()
         instrument.volume *
         info.velocity;
 
-    // Stage 12 - Stereo Spread. Panning happens last, after the
-    // full mono signal chain (oscillators, filters, envelope,
-    // effects) is finished, so the DSP itself stays completely
-    // unchanged from Stage 11 - only the final placement in the
-    // stereo field is new. stereoWidth defaults to 0.0, which
-    // collapses computePan() to dead center on every voice: both
-    // channels then carry the same signal at the standard
-    // constant-power center level (~-3dB per channel), which is
-    // what keeps perceived loudness consistent as a voice moves
-    // across the stereo field rather than dipping in the middle.
+    // Stage 13 - 8-Voice Unison gain staging. Summing N unison
+    // voices without correction can be up to N times louder than
+    // a single voice in the worst case (voices nearly in phase
+    // at low detune). Scaling each voice's contribution by 1/N
+    // guarantees the summed unison stack never exceeds a single
+    // voice's peak amplitude, the same "only ever scale down"
+    // philosophy OscillatorBank's gain staging already uses.
+    // unisonCount defaults to 1, so this is a no-op for every
+    // instrument that hasn't opted into unison.
+    sample /=
+        static_cast<float>(
+            unisonCount);
+
+    // Stage 12 - Stereo Spread / Stage 13 - 8-Voice Unison.
+    // Panning happens last, after the full mono signal chain
+    // (oscillators, filters, envelope, effects) is finished, so
+    // the DSP itself is unaffected by either stage - only the
+    // final placement in the stereo field changes. With no
+    // unison active (unisonCount == 1, the default), this is
+    // exactly Stage 12's note-based pan. With unison active,
+    // each voice in the stack gets its own fixed position spread
+    // evenly across the field instead - the note-based pan is
+    // what a single, un-detuned voice would use, so it isn't
+    // meaningful once there are several deliberately-detuned
+    // voices to place instead.
     const float panPosition =
-        StereoPanner::computePan(
-            info.midiNote,
-            instrument.stereoWidth);
+        (unisonCount > 1)
+        ? unisonSpread *
+          std::clamp(
+              instrument.stereoWidth,
+              0.0f,
+              1.0f)
+        : StereoPanner::computePan(
+              info.midiNote,
+              instrument.stereoWidth);
 
     return
         StereoPanner::pan(
