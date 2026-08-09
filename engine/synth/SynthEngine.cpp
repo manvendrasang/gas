@@ -31,9 +31,9 @@ void SynthEngine::noteOff(
         midiNote);
 }
 
-float SynthEngine::process()
+StereoSample SynthEngine::process()
 {
-    float sample =
+    StereoSample sample =
         voiceManager.process();
 
     return

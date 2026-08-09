@@ -15,11 +15,16 @@ AudioRenderer::render(
             durationSeconds *
             sampleRate);
 
+    // Stage 12 - Stereo Spread. The buffer is interleaved
+    // stereo (L, R, L, R, ...): two floats per sample frame.
+    // WaveExporter and AudioPlayer both treat this vector as a
+    // flat sequence of samples already, so this is the only
+    // place that needs to know the frame/channel distinction.
     std::vector<float>
         buffer;
 
     buffer.reserve(
-        totalSamples);
+        totalSamples * 2);
 
     SynthEngine
         engine;
@@ -36,8 +41,14 @@ AudioRenderer::render(
          i < totalSamples;
          i++)
     {
+        StereoSample frame =
+            engine.process();
+
         buffer.push_back(
-            engine.process());
+            frame.left);
+
+        buffer.push_back(
+            frame.right);
     }
 
     return buffer;

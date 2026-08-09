@@ -11,8 +11,11 @@ bool AudioPlayer::initialize()
     config.playback.format =
         ma_format_f32;
 
+    // Stage 12 - Stereo Spread. The renderer now produces
+    // interleaved stereo (L, R, L, R, ...), so playback is opened
+    // as 2-channel to match.
     config.playback.channels =
-        1;
+        2;
 
     config.sampleRate =
         44100;
@@ -84,9 +87,17 @@ void AudioPlayer::dataCallback(
         static_cast<float*>(
             output);
 
+    // Stage 12 - Stereo Spread. playbackBuffer is interleaved
+    // stereo (L, R, L, R, ...), matching the 2-channel device
+    // opened in initialize(), so the callback must fill
+    // frameCount * channels samples rather than frameCount.
+    const ma_uint32 sampleCount =
+        frameCount *
+        device->playback.channels;
+
     for (
         ma_uint32 i = 0;
-        i < frameCount;
+        i < sampleCount;
         ++i)
     {
         if (

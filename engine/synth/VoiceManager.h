@@ -5,6 +5,7 @@
 #include "Voice.h"
 #include "Instrument.h"
 #include "VoiceAllocator.h"
+#include "StereoSample.h"
 
 class VoiceManager
 {
@@ -24,7 +25,7 @@ public:
     void noteOff(
         int midiNote);
 
-    float process();
+    StereoSample process();
 
 private:
 

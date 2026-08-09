@@ -20,8 +20,14 @@ bool WaveExporter::write(
     const int bitsPerSample =
         16;
 
+    // Stage 12 - Stereo Spread. AudioRenderer now produces
+    // interleaved stereo (L, R, L, R, ...), so this writer emits
+    // a 2-channel WAV. The sample-writing loop below is
+    // unchanged: it just walks the vector in order regardless of
+    // channel count, which is already correct for interleaved
+    // data.
     const int channels =
-        1;
+        2;
 
     uint32_t dataSize =
         samples.size()

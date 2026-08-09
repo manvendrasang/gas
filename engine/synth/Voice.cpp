@@ -6,6 +6,7 @@
 #include "oscillators/TriangleOscillator.h"
 #include "oscillators/NoiseOscillator.h"
 #include "MidiUtils.h"
+#include "StereoPanner.h"
 
 std::unique_ptr<Oscillator>
 Voice::createOscillator(
@@ -131,7 +132,7 @@ void Voice::setInstrument(
         inst.bitCrush);
 }
 
-float Voice::process()
+StereoSample Voice::process()
 {
     state.time +=
         1.0f /
@@ -176,10 +177,29 @@ float Voice::process()
             instrument.vibratoDepth,
             instrument.vibratoSpeed);
 
-    return
-        sample *
+    sample *=
         instrument.volume *
         info.velocity;
+
+    // Stage 12 - Stereo Spread. Panning happens last, after the
+    // full mono signal chain (oscillators, filters, envelope,
+    // effects) is finished, so the DSP itself stays completely
+    // unchanged from Stage 11 - only the final placement in the
+    // stereo field is new. stereoWidth defaults to 0.0, which
+    // collapses computePan() to dead center on every voice: both
+    // channels then carry the same signal at the standard
+    // constant-power center level (~-3dB per channel), which is
+    // what keeps perceived loudness consistent as a voice moves
+    // across the stereo field rather than dipping in the middle.
+    const float panPosition =
+        StereoPanner::computePan(
+            info.midiNote,
+            instrument.stereoWidth);
+
+    return
+        StereoPanner::pan(
+            sample,
+            panPosition);
 }
 
 void Voice::setMidiNote(

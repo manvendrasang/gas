@@ -1,5 +1,7 @@
 #pragma once
 
+#include "StereoSample.h"
+
 class VoiceMixer
 {
 public:
@@ -16,22 +18,39 @@ public:
         limiter = value;
     }
 
-    float process(
-        float sample)
+    StereoSample process(
+        StereoSample sample)
     {
-        sample *=
+        sample.left *=
             masterGain;
 
-        if (sample > limiter)
-            sample = limiter;
+        sample.right *=
+            masterGain;
 
-        if (sample < -limiter)
-            sample = -limiter;
+        sample.left =
+            clamp(
+                sample.left);
+
+        sample.right =
+            clamp(
+                sample.right);
 
         return sample;
     }
 
 private:
+
+    float clamp(
+        float value)
+    {
+        if (value > limiter)
+            return limiter;
+
+        if (value < -limiter)
+            return -limiter;
+
+        return value;
+    }
 
     float masterGain =
         1.0f;

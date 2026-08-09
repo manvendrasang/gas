@@ -2,6 +2,7 @@
 
 #include "VoiceManager.h"
 #include "VoiceMixer.h"
+#include "StereoSample.h"
 
 class SynthEngine
 {
@@ -18,7 +19,7 @@ public:
     void noteOff(
         int midiNote);
 
-    float process();
+    StereoSample process();
 
 private:
 

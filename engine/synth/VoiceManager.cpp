@@ -40,7 +40,14 @@ void VoiceManager::noteOn(
         index = allocator.allocate();
     }
 
-    voices[index].reset();
+    // setInstrument() performs its own internal reset() of the
+    // voice's per-note state (VoiceInfo), so the note-specific
+    // calls below must come after it - otherwise they get wiped
+    // and every voice silently falls back to its VoiceInfo
+    // defaults (midiNote 69, velocity 1.0) regardless of what
+    // was actually requested here.
+    voices[index].setInstrument(
+        instrument);
 
     voices[index].setReleased(false);
 
@@ -51,9 +58,6 @@ void VoiceManager::noteOn(
 
     voices[index].setMidiNote(
         midiNote);
-
-    voices[index].setInstrument(
-        instrument);
 
     voices[index].setActive(true);
 }
@@ -75,9 +79,9 @@ void VoiceManager::noteOff(
     }
 }
 
-float VoiceManager::process()
+StereoSample VoiceManager::process()
 {
-    float output = 0.0f;
+    StereoSample output;
 
     for (size_t i = 0; i < voices.size(); ++i)
     {
