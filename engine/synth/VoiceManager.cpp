@@ -1,5 +1,7 @@
 #include "VoiceManager.h"
 
+#include <algorithm>
+
 VoiceManager::VoiceManager(
     int maxVoices)
     :
@@ -24,47 +26,77 @@ void VoiceManager::noteOn(
     float velocity,
     const Instrument& instrument)
 {
-    int index = -1;
+    // Stage 13 - 8-Voice Unison. A single note now spawns
+    // unisonCount actual Voice instances instead of always one,
+    // each assigned its slot within the stack via
+    // setUnisonSlot() - that is what drives their individual
+    // detune and stereo position (see Voice::process()). All of
+    // them share midiNote, so noteOff() below releases the whole
+    // stack together. unisonVoices defaults to 1, so this loop
+    // runs once per note exactly as before for every instrument
+    // that hasn't opted into unison.
+    const int unisonCount =
+        std::clamp(
+            instrument.unisonVoices,
+            1,
+            8);
 
-    for (size_t i = 0; i < voices.size(); ++i)
+    for (int slot = 0; slot < unisonCount; ++slot)
     {
-        if (!voices[i].isActive())
+        int index = -1;
+
+        for (size_t i = 0; i < voices.size(); ++i)
         {
-            index = static_cast<int>(i);
-            break;
+            if (!voices[i].isActive())
+            {
+                index = static_cast<int>(i);
+                break;
+            }
         }
+
+        if (index == -1)
+        {
+            index = allocator.allocate();
+        }
+
+        // setInstrument() performs its own internal reset() of
+        // the voice's per-note state (VoiceInfo and unison
+        // slot), so the note-specific calls below must come
+        // after it - otherwise they get wiped and every voice
+        // silently falls back to its defaults (midiNote 69,
+        // velocity 1.0, unison slot 0 of 1) regardless of what
+        // was actually requested here.
+        voices[index].setInstrument(
+            instrument);
+
+        voices[index].setReleased(false);
+
+        voices[index].setSustained(false);
+
+        voices[index].setVelocity(
+            velocity);
+
+        voices[index].setMidiNote(
+            midiNote);
+
+        voices[index].setUnisonSlot(
+            slot,
+            unisonCount);
+
+        voices[index].setActive(true);
     }
-
-    if (index == -1)
-    {
-        index = allocator.allocate();
-    }
-
-    // setInstrument() performs its own internal reset() of the
-    // voice's per-note state (VoiceInfo), so the note-specific
-    // calls below must come after it - otherwise they get wiped
-    // and every voice silently falls back to its VoiceInfo
-    // defaults (midiNote 69, velocity 1.0) regardless of what
-    // was actually requested here.
-    voices[index].setInstrument(
-        instrument);
-
-    voices[index].setReleased(false);
-
-    voices[index].setSustained(false);
-
-    voices[index].setVelocity(
-        velocity);
-
-    voices[index].setMidiNote(
-        midiNote);
-
-    voices[index].setActive(true);
 }
 
 void VoiceManager::noteOff(
     int midiNote)
 {
+    // Stage 13 - 8-Voice Unison. A note may now be backed by
+    // several voices (its whole unison stack), all sharing
+    // midiNote, so every matching active voice must be released
+    // here - not just the first one found. Before unison this
+    // was always exactly one voice, so the old early "break"
+    // never mattered; with unison it would have left every voice
+    // but one stuck sounding indefinitely.
     for (auto& voice : voices)
     {
         if (voice.isActive() &&
@@ -73,8 +105,6 @@ void VoiceManager::noteOff(
             voice.setReleased(true);
 
             voice.noteOff();
-
-            break;
         }
     }
 }
