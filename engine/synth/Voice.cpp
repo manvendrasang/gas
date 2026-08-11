@@ -1,6 +1,7 @@
 #include "Voice.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "oscillators/SineOscillator.h"
 #include "oscillators/SquareOscillator.h"
@@ -49,6 +50,8 @@ void Voice::prepare(
     oscillators.prepare(sr);
 
     processor.prepare(sr);
+
+    vibratoLFO.prepare(sr);
 }
 
 void Voice::reset()
@@ -125,6 +128,25 @@ void Voice::setInstrument(
     oscillators.setPrimaryFrequency(
         inst.frequency);
 
+    // Stage 16 - LFO Core. vibratoLFO is a Voice-level member
+    // (not part of VoiceState/reset()), so its phase naturally
+    // free-runs across notes by default - vibratoSync == true
+    // (the default) explicitly resets it here instead, giving
+    // every note the same, predictable vibrato onset.
+    vibratoLFO.setFrequency(
+        inst.vibratoSpeed);
+
+    vibratoLFO.setDepth(
+        inst.vibratoDepth);
+
+    vibratoLFO.setShape(
+        inst.vibratoShape);
+
+    if (inst.vibratoSync)
+    {
+        vibratoLFO.reset();
+    }
+
     processor.setEnvelope(
         inst.envelope);
 
@@ -155,6 +177,70 @@ StereoSample Voice::process()
 
     incrementAge();
 
+    // Stage 14 - Portamento. Advance an in-progress glide before
+    // state.currentFrequency is used for anything below.
+    // glideDuration defaults to 0 (set by setMidiNote() and by
+    // VoiceState's own defaults), so this is a no-op for every
+    // voice that never had glideToMidiNote() called on it -
+    // state.currentFrequency was already set directly and stays
+    // untouched here, exactly like Stage 11/12/13.
+    if (state.glideDuration > 0.0f)
+    {
+        state.glideElapsed +=
+            1.0f /
+            static_cast<float>(sampleRate);
+
+        if (state.glideElapsed >= state.glideDuration)
+        {
+            // Glide finished this sample - snap exactly to the
+            // target and stop tracking it, so we don't keep
+            // doing this division every sample forever.
+            state.currentFrequency =
+                state.glideTargetFrequency;
+
+            state.glideDuration =
+                0.0f;
+        }
+        else
+        {
+            const float t =
+                state.glideElapsed /
+                state.glideDuration;
+
+            // Linear interpolation in log2(frequency), i.e.
+            // exponential in Hz - this gives a constant musical
+            // glide speed regardless of interval size, so a
+            // glide across an octave doesn't sound dramatically
+            // faster or slower than a glide across a semitone.
+            const float startLog =
+                std::log2(
+                    state.glideStartFrequency);
+
+            const float targetLog =
+                std::log2(
+                    state.glideTargetFrequency);
+
+            state.currentFrequency =
+                std::exp2(
+                    startLog +
+                    (targetLog - startLog) * t);
+        }
+    }
+
+    // Stage 16 - LFO Core. Vibrato modulates the note's base
+    // pitch, before unison detune / secondary / sub are derived
+    // from it - so the whole voice wobbles together in pitch,
+    // rather than only one oscillator layer. vibratoLFO.process()
+    // returns depth * waveform(-1..1); depth is in Hz, matching
+    // how instrument.vibratoDepth was already documented/passed
+    // around even before this stage actually implemented it.
+    // With the default vibratoDepth of 0.0, this returns exactly
+    // 0.0 every time - a complete no-op for every existing
+    // instrument that hasn't set it, identical to Stage 11-15.
+    const float vibratoModulatedFrequency =
+        state.currentFrequency +
+        vibratoLFO.process();
+
     // Stage 13 - 8-Voice Unison. When this voice is part of a
     // unison stack (unisonCount > 1), it sits at an evenly
     // spread position across the stack: voice 0 and voice
@@ -176,7 +262,7 @@ StereoSample Voice::process()
     }
 
     const float primaryFrequency =
-        state.currentFrequency *
+        vibratoModulatedFrequency *
         MidiUtils::centsToRatio(
             unisonSpread *
             instrument.unisonDetune);
@@ -210,10 +296,7 @@ StereoSample Voice::process()
 
     sample =
         processor.process(
-            state,
-            sample,
-            instrument.vibratoDepth,
-            instrument.vibratoSpeed);
+            sample);
 
     sample *=
         instrument.volume *
@@ -273,6 +356,74 @@ void Voice::setMidiNote(
 
     state.currentFrequency =
         info.frequency;
+
+    // Stage 14 - Portamento. An instant jump means no glide is
+    // in progress - explicitly clearing these (rather than
+    // relying on setInstrument()'s reset() to have already done
+    // it) keeps that invariant true regardless of call order.
+    state.glideStartFrequency =
+        info.frequency;
+
+    state.glideTargetFrequency =
+        info.frequency;
+
+    state.glideDuration =
+        0.0f;
+
+    state.glideElapsed =
+        0.0f;
+}
+
+void Voice::glideToMidiNote(
+    int midiNote,
+    float fromFrequency,
+    float glideTimeSeconds)
+{
+    info.midiNote =
+        midiNote;
+
+    info.frequency =
+        MidiUtils::noteToFrequency(
+            midiNote);
+
+    if (glideTimeSeconds > 0.0f &&
+        fromFrequency > 0.0f)
+    {
+        state.currentFrequency =
+            fromFrequency;
+
+        state.glideStartFrequency =
+            fromFrequency;
+
+        state.glideTargetFrequency =
+            info.frequency;
+
+        state.glideDuration =
+            glideTimeSeconds;
+
+        state.glideElapsed =
+            0.0f;
+    }
+    else
+    {
+        // No meaningful glide requested (or no valid starting
+        // pitch to glide from) - fall back to exactly the same
+        // instant jump as setMidiNote().
+        state.currentFrequency =
+            info.frequency;
+
+        state.glideStartFrequency =
+            info.frequency;
+
+        state.glideTargetFrequency =
+            info.frequency;
+
+        state.glideDuration =
+            0.0f;
+
+        state.glideElapsed =
+            0.0f;
+    }
 }
 
 int Voice::getMidiNote() const
@@ -285,6 +436,12 @@ float Voice::getFrequency() const
 {
     return
         info.frequency;
+}
+
+float Voice::getCurrentFrequency() const
+{
+    return
+        state.currentFrequency;
 }
 
 bool Voice::isActive() const
