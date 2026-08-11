@@ -54,11 +54,19 @@ public:
         effects.setBitCrush(amount);
     }
 
+    // Stage 16 - LFO Core. Previously took VoiceState& and
+    // vibratoDepth/vibratoSpeed parameters that were accepted
+    // but never used anywhere in this function - real vibrato is
+    // now implemented in Voice::process() instead (it has to
+    // modulate the oscillator's frequency before the sample is
+    // generated, which is earlier than this function ever sees
+    // it - by the time a sample reaches here, its pitch has
+    // already been baked in). Filters/effects/envelope never
+    // touched those parameters either, so dropping them from the
+    // signature has no effect on what this function actually
+    // does.
     float process(
-        VoiceState& state,
-        float sample,
-        float vibratoDepth,
-        float vibratoSpeed)
+        float sample)
     {
         sample =
             filters.process(sample);

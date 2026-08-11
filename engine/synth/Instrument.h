@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ADSR.h"
+#include "LFO.h"
 
 enum class WaveType
 {
@@ -27,6 +28,22 @@ struct Instrument
     float vibratoDepth = 0.0f;
 
     float vibratoSpeed = 0.0f;
+
+    // Stage 16 - LFO Core. vibratoDepth/vibratoSpeed existed
+    // since before Stage 11 but were never actually wired into
+    // the signal path (VoiceProcessor::process() accepted them
+    // as parameters and silently ignored both) - this stage
+    // finally implements real vibrato, using these two alongside
+    // the fields below.
+    LFOShape vibratoShape = LFOShape::Sine;
+
+    // Whether the vibrato LFO's phase resets to 0 at the start
+    // of every note (true, the default - gives every note the
+    // same, predictable vibrato onset) or keeps running
+    // continuously across notes on the same voice (false - a
+    // more chorus-like effect where different notes catch the
+    // LFO at different points in its cycle).
+    bool vibratoSync = true;
 
     float noiseMix = 0.0f;
 
@@ -82,8 +99,7 @@ struct Instrument
         0.30f;
 
 
-    // Unison (foundation - full multi-voice unison lands in
-    // a later stage)
+    // Unison (Stage 13 - full multi-voice unison)
 
     int unisonVoices =
         1;
@@ -96,5 +112,19 @@ struct Instrument
     // stage)
 
     float stereoWidth =
+        0.0f;
+
+
+    // Portamento (Stage 14). Applies only when a note has to
+    // reuse an already-sounding voice because the voice pool is
+    // full (a "stolen" voice) - see VoiceManager::noteOn(). In
+    // that situation the reused voice's pitch glides from
+    // wherever it currently was to the new note over this many
+    // seconds, instead of jumping instantly. 0 = off (instant
+    // jump, today's behavior). This does not yet cover true
+    // monophonic-style portamento on ordinary note retriggers -
+    // that lands with Stage 21 (Legato Mode), which will reuse
+    // this same glide mechanism.
+    float portamentoTime =
         0.0f;
 };

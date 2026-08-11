@@ -32,9 +32,6 @@ private:
     std::vector<Voice>
         voices;
 
-    VoiceAllocator
-        allocator;
-
     double sampleRate =
         44100.0;
 };

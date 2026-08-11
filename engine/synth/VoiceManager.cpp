@@ -5,8 +5,7 @@
 VoiceManager::VoiceManager(
     int maxVoices)
     :
-    voices(maxVoices),
-    allocator(maxVoices)
+    voices(maxVoices)
 {
 }
 
@@ -54,9 +53,48 @@ void VoiceManager::noteOn(
             }
         }
 
-        if (index == -1)
+        // Stage 15 - Improved Voice Stealing. If no free voice
+        // was found, we have to steal one that's already
+        // sounding. Choose it based on the pool's real state
+        // (release status + age) rather than a round-robin index
+        // - specifically, prefer a voice that's already fading
+        // out in its release tail (least audible to interrupt),
+        // and among equally-eligible voices prefer the oldest.
+        const bool stolen =
+            (index == -1);
+
+        float stolenFromFrequency =
+            0.0f;
+
+        if (stolen)
         {
-            index = allocator.allocate();
+            std::vector<bool> released(
+                voices.size());
+
+            std::vector<unsigned long> ages(
+                voices.size());
+
+            for (size_t i = 0; i < voices.size(); ++i)
+            {
+                released[i] =
+                    voices[i].isReleased();
+
+                ages[i] =
+                    voices[i].getAge();
+            }
+
+            index =
+                VoiceAllocator::chooseVoiceToSteal(
+                    released,
+                    ages);
+
+            // Stage 14 - Portamento. Captured before
+            // setInstrument() below, which internally resets the
+            // voice's state - this is the voice's real current
+            // pitch (possibly itself mid-glide), not just its
+            // nominal note frequency.
+            stolenFromFrequency =
+                voices[index].getCurrentFrequency();
         }
 
         // setInstrument() performs its own internal reset() of
@@ -76,8 +114,19 @@ void VoiceManager::noteOn(
         voices[index].setVelocity(
             velocity);
 
-        voices[index].setMidiNote(
-            midiNote);
+        if (stolen &&
+            instrument.portamentoTime > 0.0f)
+        {
+            voices[index].glideToMidiNote(
+                midiNote,
+                stolenFromFrequency,
+                instrument.portamentoTime);
+        }
+        else
+        {
+            voices[index].setMidiNote(
+                midiNote);
+        }
 
         voices[index].setUnisonSlot(
             slot,
@@ -125,7 +174,6 @@ StereoSample VoiceManager::process()
         if (voice.finished())
         {
             voice.setActive(false);
-            allocator.release(static_cast<int>(i));
         }
     }
 

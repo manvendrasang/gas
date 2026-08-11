@@ -9,6 +9,7 @@
 #include "VoiceProcessor.h"
 #include "VoiceInfo.h"
 #include "StereoSample.h"
+#include "LFO.h"
 
 class Voice
 {
@@ -22,6 +23,19 @@ public:
 
     void setMidiNote(
         int midiNote);
+
+    // Stage 14 - Portamento. Like setMidiNote(), but instead of
+    // jumping to the new note's pitch instantly, glides there
+    // from fromFrequency over glideTimeSeconds. Used specifically
+    // when VoiceManager has to reuse an already-sounding voice
+    // (the pool is full) rather than for ordinary fresh notes -
+    // see VoiceManager::noteOn(). If glideTimeSeconds <= 0 or
+    // fromFrequency <= 0, this behaves exactly like setMidiNote()
+    // (an instant jump), so it's always safe to call.
+    void glideToMidiNote(
+        int midiNote,
+        float fromFrequency,
+        float glideTimeSeconds);
 
     void noteOn();
 
@@ -40,6 +54,14 @@ public:
     int getMidiNote() const;
 
     float getFrequency() const;
+
+    // Stage 14 - Portamento. Returns the voice's actual
+    // currently-sounding pitch, which may be mid-glide - unlike
+    // getFrequency(), which returns the nominal target pitch of
+    // the current note. Used by VoiceManager to capture a stolen
+    // voice's real pitch as the start point for its next glide,
+    // before setInstrument()'s internal reset() clears it.
+    float getCurrentFrequency() const;
 
     void setActive(
         bool active);
@@ -87,6 +109,19 @@ private:
 
     VoiceProcessor
         processor;
+
+    // Stage 16 - LFO Core. Lives here rather than inside
+    // VoiceState deliberately: VoiceState gets fully
+    // reconstructed (state = VoiceState{}) on every note-on via
+    // reset(), which would silently wipe this LFO's sample-rate
+    // configuration every single note if it lived there instead -
+    // the same reason oscillators/processor above are also
+    // Voice-level members rather than VoiceState members. Its
+    // phase resets on note-on only when instrument.vibratoSync is
+    // true (see setInstrument()); otherwise it free-runs
+    // continuously across notes on this voice.
+    LFO
+        vibratoLFO;
 
     VoiceState
         state;

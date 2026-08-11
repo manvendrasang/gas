@@ -1,41 +1,65 @@
 #include "VoiceAllocator.h"
 
-VoiceAllocator::VoiceAllocator(
-    int voiceCount)
-    : active(voiceCount, false)
+int VoiceAllocator::chooseVoiceToSteal(
+    const std::vector<bool>& released,
+    const std::vector<unsigned long>& ages)
 {
-}
+    int bestIndex = 0;
 
-int VoiceAllocator::allocate()
-{
-    // Prefer an inactive voice.
-    for (size_t i = 0; i < active.size(); ++i)
+    bool bestIsReleased = false;
+
+    unsigned long bestAge = 0;
+
+    bool found = false;
+
+    for (size_t i = 0; i < released.size(); ++i)
     {
-        if (!active[i])
+        const bool candidateReleased =
+            released[i];
+
+        const unsigned long candidateAge =
+            ages[i];
+
+        if (!found)
         {
-            active[i] = true;
-            nextVoice = static_cast<int>(i);
-            return nextVoice;
+            bestIndex = static_cast<int>(i);
+
+            bestIsReleased = candidateReleased;
+
+            bestAge = candidateAge;
+
+            found = true;
+
+            continue;
+        }
+
+        // A released voice always beats a sustaining one,
+        // regardless of age - it's already fading out.
+        if (candidateReleased && !bestIsReleased)
+        {
+            bestIndex = static_cast<int>(i);
+
+            bestIsReleased = candidateReleased;
+
+            bestAge = candidateAge;
+
+            continue;
+        }
+
+        // Never downgrade from a released best candidate to a
+        // sustaining one.
+        if (bestIsReleased && !candidateReleased)
+            continue;
+
+        // Same release-state tier: prefer whichever has been
+        // sounding the longest.
+        if (candidateAge > bestAge)
+        {
+            bestIndex = static_cast<int>(i);
+
+            bestAge = candidateAge;
         }
     }
 
-    // Voice stealing (round-robin for now).
-    nextVoice++;
-
-    if (nextVoice >= static_cast<int>(active.size()))
-        nextVoice = 0;
-
-    active[nextVoice] = true;
-
-    return nextVoice;
-}
-
-void VoiceAllocator::release(
-    int index)
-{
-    if (index >= 0 &&
-        index < static_cast<int>(active.size()))
-    {
-        active[index] = false;
-    }
+    return bestIndex;
 }
