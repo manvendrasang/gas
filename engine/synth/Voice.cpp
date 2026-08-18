@@ -52,6 +52,8 @@ void Voice::prepare(
     processor.prepare(sr);
 
     vibratoLFO.prepare(sr);
+
+    modLFO.prepare(sr);
 }
 
 void Voice::reset()
@@ -136,6 +138,11 @@ void Voice::setInstrument(
     vibratoLFO.setFrequency(
         inst.vibratoSpeed);
 
+    // Stage 19 - Mod Wheel. This is just the initial depth - it
+    // gets recomputed (factoring in the mod wheel) every sample
+    // in process() now, but setting it here too means vibratoLFO
+    // is in a fully consistent state immediately, before the
+    // first process() call for this note has even run.
     vibratoLFO.setDepth(
         inst.vibratoDepth);
 
@@ -145,6 +152,27 @@ void Voice::setInstrument(
     if (inst.vibratoSync)
     {
         vibratoLFO.reset();
+    }
+
+    // Stage 17 - LFO Matrix / Modulation Routing. Same
+    // configure-and-conditionally-reset pattern as vibratoLFO
+    // above. With the default modLFODestination of None, this
+    // LFO still runs every sample (see process()) but its output
+    // is never applied anywhere, so configuring it here has no
+    // audible effect for any instrument that hasn't assigned it
+    // a destination.
+    modLFO.setFrequency(
+        inst.modLFOSpeed);
+
+    modLFO.setDepth(
+        inst.modLFODepth);
+
+    modLFO.setShape(
+        inst.modLFOShape);
+
+    if (inst.modLFOSync)
+    {
+        modLFO.reset();
     }
 
     processor.setEnvelope(
@@ -167,6 +195,18 @@ void Voice::setUnisonSlot(
     unisonIndex = index;
 
     unisonCount = count;
+}
+
+void Voice::setPitchBend(
+    float value)
+{
+    pitchBendValue = value;
+}
+
+void Voice::setModWheel(
+    float value)
+{
+    modWheelValue = value;
 }
 
 StereoSample Voice::process()
@@ -227,19 +267,65 @@ StereoSample Voice::process()
         }
     }
 
-    // Stage 16 - LFO Core. Vibrato modulates the note's base
-    // pitch, before unison detune / secondary / sub are derived
-    // from it - so the whole voice wobbles together in pitch,
-    // rather than only one oscillator layer. vibratoLFO.process()
-    // returns depth * waveform(-1..1); depth is in Hz, matching
-    // how instrument.vibratoDepth was already documented/passed
-    // around even before this stage actually implemented it.
-    // With the default vibratoDepth of 0.0, this returns exactly
-    // 0.0 every time - a complete no-op for every existing
-    // instrument that hasn't set it, identical to Stage 11-15.
+    // Stage 16 - LFO Core / Stage 19 - Mod Wheel. Vibrato
+    // modulates the note's base pitch, before unison detune /
+    // secondary / sub are derived from it - so the whole voice
+    // wobbles together in pitch, rather than only one oscillator
+    // layer. Depth is recomputed here every sample (rather than
+    // only once in setInstrument()) specifically so the mod wheel
+    // can change it in real time, the same way pitch bend changes
+    // pitch in real time - instrument.modWheelRange defaults to
+    // 0.0, so this collapses to exactly instrument.vibratoDepth
+    // regardless of modWheelValue for every instrument that
+    // hasn't opted in, identical to Stage 16-18.
+    vibratoLFO.setDepth(
+        instrument.vibratoDepth +
+        modWheelValue *
+        instrument.modWheelRange);
+
     const float vibratoModulatedFrequency =
         state.currentFrequency +
         vibratoLFO.process();
+
+    // Stage 17 - LFO Matrix / Modulation Routing. Computed once
+    // per sample regardless of destination (an LFO's phase
+    // shouldn't depend on where its output happens to be routed),
+    // then applied at whichever point in this function matches
+    // its destination - Pitch and Filter apply early (before the
+    // oscillators/filters actually run), Volume and Pan apply
+    // late (after the sample and its stereo position exist). With
+    // the default destination of None, modLFOOutput is computed
+    // but never used anywhere below - zero effect, same as an
+    // unused local would have.
+    const float modLFOOutput =
+        modLFO.process();
+
+    float pitchModulatedFrequency =
+        vibratoModulatedFrequency;
+
+    if (instrument.modLFODestination ==
+        ModDestination::Pitch)
+    {
+        pitchModulatedFrequency +=
+            modLFOOutput;
+    }
+
+    // Stage 18 - Pitch Bend. Unlike vibrato/modLFO above (which
+    // are additive Hz offsets - a reasonable approximation for a
+    // small wobble), pitch bend needs to be musically correct
+    // across a potentially large range (a couple of semitones),
+    // so it's applied as a multiplicative cents ratio instead -
+    // the same technique already used for unison/secondary/sub
+    // detune below. With the default pitchBendValue of 0.0, this
+    // ratio is exactly 1.0 - a complete no-op for every instrument
+    // that hasn't had setPitchBend() called on it with a nonzero
+    // value.
+    const float bentFrequency =
+        pitchModulatedFrequency *
+        MidiUtils::centsToRatio(
+            pitchBendValue *
+            instrument.pitchBendRange *
+            100.0f);
 
     // Stage 13 - 8-Voice Unison. When this voice is part of a
     // unison stack (unisonCount > 1), it sits at an evenly
@@ -262,7 +348,7 @@ StereoSample Voice::process()
     }
 
     const float primaryFrequency =
-        vibratoModulatedFrequency *
+        bentFrequency *
         MidiUtils::centsToRatio(
             unisonSpread *
             instrument.unisonDetune);
@@ -291,6 +377,24 @@ StereoSample Voice::process()
     oscillators.setDutyCycle(
         instrument.squareDuty);
 
+    // Stage 17 - LFO Matrix / Modulation Routing. Re-setting the
+    // filter cutoff every sample is fine here specifically
+    // because these are simple one-pole filters where setCutoff()
+    // is just a float assignment (see FilterProcessor.h /
+    // LowPassFilter.h) - no expensive coefficient recalculation
+    // to worry about.
+    if (instrument.modLFODestination ==
+        ModDestination::Filter)
+    {
+        processor.setFilters(
+            std::clamp(
+                instrument.lowpassCutoff +
+                modLFOOutput,
+                0.0f,
+                1.0f),
+            instrument.highpassCutoff);
+    }
+
     float sample =
         oscillators.process();
 
@@ -301,6 +405,21 @@ StereoSample Voice::process()
     sample *=
         instrument.volume *
         info.velocity;
+
+    // Stage 17 - LFO Matrix / Modulation Routing. Applied after
+    // the envelope/velocity/instrument-volume multiply above, so
+    // tremolo-style modulation scales the note's actual output
+    // level rather than fighting with it. Clamped to never go
+    // negative, which would flip the waveform's polarity instead
+    // of just quietening it.
+    if (instrument.modLFODestination ==
+        ModDestination::Volume)
+    {
+        sample *=
+            std::max(
+                0.0f,
+                1.0f + modLFOOutput);
+    }
 
     // Stage 13 - 8-Voice Unison gain staging. Summing N unison
     // voices without correction can be up to N times louder than
@@ -327,7 +446,7 @@ StereoSample Voice::process()
     // what a single, un-detuned voice would use, so it isn't
     // meaningful once there are several deliberately-detuned
     // voices to place instead.
-    const float panPosition =
+    float panPosition =
         (unisonCount > 1)
         ? unisonSpread *
           std::clamp(
@@ -337,6 +456,21 @@ StereoSample Voice::process()
         : StereoPanner::computePan(
               info.midiNote,
               instrument.stereoWidth);
+
+    // Stage 17 - LFO Matrix / Modulation Routing. Layered on top
+    // of whatever pan Stage 12/13 already computed (note-based or
+    // unison-spread), rather than replacing it - so pan
+    // modulation and unison spread can coexist sensibly instead
+    // of one silently overriding the other.
+    if (instrument.modLFODestination ==
+        ModDestination::Pan)
+    {
+        panPosition =
+            std::clamp(
+                panPosition + modLFOOutput,
+                -1.0f,
+                1.0f);
+    }
 
     return
         StereoPanner::pan(

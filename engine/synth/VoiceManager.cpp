@@ -132,6 +132,23 @@ void VoiceManager::noteOn(
             slot,
             unisonCount);
 
+        // Stage 18 - Pitch Bend. A voice's pitchBendValue is a
+        // Voice-level member that setInstrument()'s reset()
+        // doesn't touch (deliberately - see Voice.h), so a
+        // stolen/reused voice would otherwise keep carrying
+        // whatever bend it happened to have from its previous
+        // note. Explicitly re-applying the currently-held channel
+        // bend here means a note played while the pitch wheel is
+        // already deflected starts bent correctly, whether this
+        // voice is brand new or reused.
+        voices[index].setPitchBend(
+            currentPitchBend);
+
+        // Stage 19 - Mod Wheel. Same re-apply-on-note-on
+        // reasoning as pitch bend above.
+        voices[index].setModWheel(
+            currentModWheel);
+
         voices[index].setActive(true);
     }
 }
@@ -154,6 +171,41 @@ void VoiceManager::noteOff(
             voice.setReleased(true);
 
             voice.noteOff();
+        }
+    }
+}
+
+void VoiceManager::setPitchBend(
+    float value)
+{
+    currentPitchBend = value;
+
+    // Applies immediately to every currently-active voice -
+    // pitch bend is a real-time performance control, not
+    // something that should wait for the next note-on to take
+    // effect. Voices that aren't active yet will pick up
+    // currentPitchBend when they're triggered, in noteOn() above.
+    for (auto& voice : voices)
+    {
+        if (voice.isActive())
+        {
+            voice.setPitchBend(
+                value);
+        }
+    }
+}
+
+void VoiceManager::setModWheel(
+    float value)
+{
+    currentModWheel = value;
+
+    for (auto& voice : voices)
+    {
+        if (voice.isActive())
+        {
+            voice.setModWheel(
+                value);
         }
     }
 }

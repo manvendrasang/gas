@@ -127,4 +127,62 @@ struct Instrument
     // this same glide mechanism.
     float portamentoTime =
         0.0f;
+
+
+    // Stage 17 - LFO Matrix / Modulation Routing. A second,
+    // independent LFO alongside Stage 16's dedicated vibrato LFO
+    // (vibratoDepth/Speed/Shape/Sync above), whose output can be
+    // routed to one of several destinations instead of being
+    // fixed to pitch. modLFODepth's meaning depends on which
+    // destination is selected - it isn't the same unit in every
+    // case, the same way a real synth's "mod amount" knob means
+    // something different depending on what it's patched to:
+    //   Pitch:  Hz offset, same convention as vibratoDepth.
+    //   Volume: fractional amplitude swing (0.5 = +/-50%).
+    //   Filter: offset added to the base lowpass cutoff.
+    //   Pan:    bipolar offset added to the note's stereo
+    //           position, clamped to [-1, 1].
+    // Destination defaults to None, so every existing instrument
+    // is completely unaffected regardless of the depth/speed
+    // values sitting here.
+    ModDestination modLFODestination =
+        ModDestination::None;
+
+    LFOShape modLFOShape =
+        LFOShape::Sine;
+
+    float modLFODepth =
+        0.0f;
+
+    float modLFOSpeed =
+        5.0f;
+
+    bool modLFOSync =
+        true;
+
+
+    // Stage 18 - Pitch Bend. How many semitones a full-deflection
+    // bend (+/-1.0, see SynthEngine::setPitchBend()) represents
+    // for this instrument. 2 semitones (a whole tone) is the
+    // conventional MIDI/synth default. The bend position itself
+    // is NOT stored here - unlike everything else in Instrument,
+    // it's live performance state that has to be able to change
+    // while notes are already sounding, not a per-note snapshot -
+    // see VoiceManager::setPitchBend().
+    float pitchBendRange =
+        2.0f;
+
+
+    // Stage 19 - Mod Wheel. How many additional Hz of vibrato
+    // depth a full mod wheel deflection (1.0) adds on top of
+    // vibratoDepth above. Default 0.0 (off) - the mod wheel has
+    // zero effect on this instrument unless it explicitly opts
+    // in, so vibratoDepth continues to behave exactly as Stage 16
+    // established regardless of wherever the mod wheel happens to
+    // be sitting. Historically the most common meaning of MIDI
+    // CC1 ("modulation wheel") is specifically vibrato amount -
+    // that's the actual origin of the name - so that's what this
+    // stage wires it to, rather than something more generic.
+    float modWheelRange =
+        0.0f;
 };

@@ -91,6 +91,25 @@ public:
         int index,
         int count);
 
+    // Stage 18 - Pitch Bend. value is the normalized bend
+    // position in [-1, 1] (standard MIDI-wheel convention: 0 =
+    // centered/no bend). Converted to actual semitones using
+    // this voice's own instrument.pitchBendRange inside
+    // process(), not here - VoiceManager broadcasts the same
+    // normalized value to every active voice regardless of which
+    // instrument each one is playing, since different patches
+    // can have different bend ranges.
+    void setPitchBend(
+        float value);
+
+    // Stage 19 - Mod Wheel. value is the normalized wheel
+    // position in [0, 1] (standard MIDI convention: 0 = wheel at
+    // rest). Scales this voice's vibrato depth on top of
+    // instrument.vibratoDepth, by instrument.modWheelRange - see
+    // process().
+    void setModWheel(
+        float value);
+
     void reset();
 
     StereoSample process();
@@ -122,6 +141,32 @@ private:
     // continuously across notes on this voice.
     LFO
         vibratoLFO;
+
+    // Stage 17 - LFO Matrix / Modulation Routing. A second,
+    // independent LFO whose destination is assignable (see
+    // Instrument::modLFODestination) rather than fixed to pitch
+    // like vibratoLFO above. Same Voice-level-member reasoning
+    // applies: it must not live inside VoiceState, or its
+    // sample-rate configuration would be silently wiped on every
+    // note-on by reset().
+    LFO
+        modLFO;
+
+    // Stage 18 - Pitch Bend. A Voice-level member (not inside
+    // VoiceState) for the same reason as vibratoLFO/modLFO above:
+    // it's live performance state, and shouldn't reset to 0 just
+    // because this voice slot gets reused for a new note while a
+    // bend is being held. VoiceManager::noteOn() also explicitly
+    // re-applies the current bend to every newly-triggered voice
+    // regardless, so this is defense in depth, not the only thing
+    // making that work.
+    float pitchBendValue =
+        0.0f;
+
+    // Stage 19 - Mod Wheel. Same Voice-level-member reasoning as
+    // pitchBendValue above.
+    float modWheelValue =
+        0.0f;
 
     VoiceState
         state;
