@@ -31,6 +31,20 @@ void SynthEngine::noteOff(
         midiNote);
 }
 
+void SynthEngine::setPitchBend(
+    float value)
+{
+    voiceManager.setPitchBend(
+        value);
+}
+
+void SynthEngine::setModWheel(
+    float value)
+{
+    voiceManager.setModWheel(
+        value);
+}
+
 StereoSample SynthEngine::process()
 {
     StereoSample sample =

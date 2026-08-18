@@ -11,6 +11,16 @@ enum class LFOShape
     Saw
 };
 
+// Stage 17 - LFO Matrix / Modulation Routing.
+enum class ModDestination
+{
+    None,
+    Pitch,
+    Volume,
+    Filter,
+    Pan
+};
+
 class LFO
 {
 public:
